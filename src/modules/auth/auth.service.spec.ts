@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { Repository } from 'typeorm';
 import { AuthService } from './auth.service';
 import { Wallet } from '../wallet/wallet.entity';
 import { User } from '../users/user.entity';
@@ -9,7 +8,6 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 
 describe('AuthService - Account Lockout', () => {
   let service: AuthService;
-  let userRepository: Repository<User>;
 
   const mockUserId = '123e4567-e89b-12d3-a456-426614174000';
   const mockPublicKey = 'GABCDEF1234567890';
@@ -61,7 +59,6 @@ describe('AuthService - Account Lockout', () => {
     }).compile();
 
     service = module.get<AuthService>(AuthService);
-    userRepository = module.get<Repository<User>>(getRepositoryToken(User));
   });
 
   afterEach(() => {
@@ -70,20 +67,16 @@ describe('AuthService - Account Lockout', () => {
 
   describe('Account Lockout', () => {
     it('should lock account after 5 failed attempts', async () => {
-      // Mock wallet found
       mockWalletRepository.findOne.mockResolvedValue(mockWallet);
-      
-      // Mock user found
       mockUserRepository.findOne.mockResolvedValue({
         ...mockUser,
         failedLoginAttempts: 0,
         lockedUntil: null,
       });
 
-      // Mock signature verification to FAIL (invalid signature)
       jest.spyOn(service as any, 'verifySignature').mockResolvedValue(false);
 
-      // First 4 failed attempts (should increment counter but not lock)
+      // Simulate 4 failed attempts
       for (let i = 0; i < 4; i++) {
         try {
           await service.login({
@@ -91,29 +84,30 @@ describe('AuthService - Account Lockout', () => {
             signature: 'invalid-signature',
             message: 'test-message',
           });
-        } catch (e) {
-          // Expected to fail
+        } catch {
+          // Expected to fail - ignoring
         }
       }
 
-      // Mock user with 4 failed attempts for the 5th try
       mockUserRepository.findOne.mockResolvedValue({
         ...mockUser,
         failedLoginAttempts: 4,
         lockedUntil: null,
       });
 
-      // 5th attempt should lock the account
       try {
         await service.login({
           publicKey: mockPublicKey,
           signature: 'invalid-signature',
           message: 'test-message',
         });
-      } catch (error) {
+      } catch (error: unknown) {
         expect(error).toBeInstanceOf(HttpException);
-        expect(error.getStatus()).toBe(HttpStatus.LOCKED);
-        expect(error.getResponse()).toHaveProperty('unlockTime');
+        if (error instanceof HttpException) {
+          expect(error.getStatus()).toBe(HttpStatus.LOCKED);
+          const response = error.getResponse() as { unlockTime?: string };
+          expect(response).toHaveProperty('unlockTime');
+        }
       }
     });
 
@@ -133,10 +127,13 @@ describe('AuthService - Account Lockout', () => {
           signature: 'invalid-signature',
           message: 'test-message',
         });
-      } catch (error) {
+      } catch (error: unknown) {
         expect(error).toBeInstanceOf(HttpException);
-        expect(error.getStatus()).toBe(HttpStatus.LOCKED);
-        expect(error.getResponse()).toHaveProperty('unlockTime');
+        if (error instanceof HttpException) {
+          expect(error.getStatus()).toBe(HttpStatus.LOCKED);
+          const response = error.getResponse() as { unlockTime?: string };
+          expect(response).toHaveProperty('unlockTime');
+        }
       }
     });
 
@@ -150,7 +147,6 @@ describe('AuthService - Account Lockout', () => {
       };
       mockUserRepository.findOne.mockResolvedValue(userWithAttempts);
       
-      // Mock signature verification to SUCCEED
       jest.spyOn(service as any, 'verifySignature').mockResolvedValue(true);
 
       await service.login({
@@ -159,7 +155,8 @@ describe('AuthService - Account Lockout', () => {
         message: 'test-message',
       });
 
-      // Check that failed attempts were reset
+      // Verify the save was called with reset values
+      expect(mockUserRepository.save).toHaveBeenCalled();
       const savedUser = mockUserRepository.save.mock.calls[0][0];
       expect(savedUser.failedLoginAttempts).toBe(0);
       expect(savedUser.lockedUntil).toBeNull();
