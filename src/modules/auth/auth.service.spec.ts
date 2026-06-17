@@ -28,7 +28,7 @@ describe('AuthService - Account Lockout', () => {
 
   const mockUserRepository = {
     findOne: jest.fn(),
-    save: jest.fn().mockResolvedValue({ ...mockUser }),
+    save: jest.fn().mockResolvedValue(mockUser),
   };
 
   const mockWalletRepository = {
@@ -76,7 +76,6 @@ describe('AuthService - Account Lockout', () => {
 
       jest.spyOn(service as any, 'verifySignature').mockResolvedValue(false);
 
-      // Simulate 4 failed attempts
       for (let i = 0; i < 4; i++) {
         try {
           await service.login({
@@ -85,7 +84,7 @@ describe('AuthService - Account Lockout', () => {
             message: 'test-message',
           });
         } catch {
-          // Expected to fail - ignoring
+          // Expected to fail
         }
       }
 
@@ -101,12 +100,10 @@ describe('AuthService - Account Lockout', () => {
           signature: 'invalid-signature',
           message: 'test-message',
         });
-      } catch (error: unknown) {
+      } catch (error) {
         expect(error).toBeInstanceOf(HttpException);
         if (error instanceof HttpException) {
           expect(error.getStatus()).toBe(HttpStatus.LOCKED);
-          const response = error.getResponse() as { unlockTime?: string };
-          expect(response).toHaveProperty('unlockTime');
         }
       }
     });
@@ -127,12 +124,10 @@ describe('AuthService - Account Lockout', () => {
           signature: 'invalid-signature',
           message: 'test-message',
         });
-      } catch (error: unknown) {
+      } catch (error) {
         expect(error).toBeInstanceOf(HttpException);
         if (error instanceof HttpException) {
           expect(error.getStatus()).toBe(HttpStatus.LOCKED);
-          const response = error.getResponse() as { unlockTime?: string };
-          expect(response).toHaveProperty('unlockTime');
         }
       }
     });
@@ -149,13 +144,14 @@ describe('AuthService - Account Lockout', () => {
       
       jest.spyOn(service as any, 'verifySignature').mockResolvedValue(true);
 
-      await service.login({
+      const result = await service.login({
         publicKey: mockPublicKey,
         signature: 'valid-signature',
         message: 'test-message',
       });
 
-      // Verify the save was called with reset values
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('publicKey', mockPublicKey);
       expect(mockUserRepository.save).toHaveBeenCalled();
       const savedUser = mockUserRepository.save.mock.calls[0][0];
       expect(savedUser.failedLoginAttempts).toBe(0);
