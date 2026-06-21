@@ -20,7 +20,7 @@ describe('AnalyticsService', () => {
   describe('getSummary', () => {
     it('should return analytics summary', async () => {
       // Arrange
-      const mockData = [];
+      const mockData: any[] = [];
       mockDataSource.query.mockResolvedValue(mockData);
 
       // Act
@@ -88,10 +88,10 @@ describe('AnalyticsService', () => {
 
       it('should calculate trend correctly when current > previous', async () => {
         // Arrange
-        const currentRows = [
+        const currentRows: any[] = [
           { category: 'groceries', total_amount: '2000', transaction_count: '10' },
         ];
-        const previousRows = [{ total_amount: '1500', transaction_count: '8' }];
+        const previousRows: any[] = [{ total_amount: '1500', transaction_count: '8' }];
 
         mockDataSource.query
           .mockResolvedValueOnce(currentRows)
@@ -107,10 +107,10 @@ describe('AnalyticsService', () => {
 
       it('should calculate trend correctly when current < previous', async () => {
         // Arrange
-        const currentRows = [
+        const currentRows: any[] = [
           { category: 'groceries', total_amount: '1000', transaction_count: '5' },
         ];
-        const previousRows = [{ total_amount: '2000', transaction_count: '10' }];
+        const previousRows: any[] = [{ total_amount: '2000', transaction_count: '10' }];
 
         mockDataSource.query
           .mockResolvedValueOnce(currentRows)
