@@ -1,34 +1,115 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Wallet } from '../wallet/wallet.entity';
+import { User } from '../users/user.entity';
 import { Keypair } from '@stellar/stellar-sdk';
 import { LoginDto } from './dto/login.dto';
 
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCK_DURATION_MINUTES = 15;
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(Wallet)
     private walletRepository: Repository<Wallet>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
     private jwtService: JwtService,
   ) {}
 
   async login(loginDto: LoginDto) {
     const { publicKey, signature, message } = loginDto;
 
+    this.logger.debug(`Login attempt for public key: ${publicKey}`);
+
+    // Find wallet
+    const wallet = await this.walletRepository.findOne({
+      where: { publicKey },
+    });
+
+    if (!wallet) {
+      this.logger.warn(`Wallet not found for public key: ${publicKey}`);
+      throw new UnauthorizedException('Wallet not found');
+    }
+
+    // Find user by userId from wallet
+    const user = await this.userRepository.findOne({
+      where: { id: wallet.userId },
+    });
+
+    if (!user) {
+      this.logger.warn(`User not found for wallet: ${publicKey}`);
+      throw new UnauthorizedException('User not found');
+    }
+
+    // Check if account is locked
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const remainingSeconds = Math.floor((user.lockedUntil.getTime() - Date.now()) / 1000);
+      const unlockTime = user.lockedUntil.toISOString();
+      
+      this.logger.warn(
+        `Locked account login attempt: ${publicKey}, remaining: ${remainingSeconds}s`,
+      );
+      
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.LOCKED,
+          message: 'Account is temporarily locked due to multiple failed login attempts.',
+          unlockTime,
+          remainingSeconds,
+        },
+        HttpStatus.LOCKED,
+      );
+    }
+
     // Verify the signature
     const isValid = await this.verifySignature(publicKey, signature, message);
+    
     if (!isValid) {
+      // Increment failed attempts
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      
+      let wasLocked = false;
+      if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
+        const lockUntil = new Date();
+        lockUntil.setMinutes(lockUntil.getMinutes() + LOCK_DURATION_MINUTES);
+        user.lockedUntil = lockUntil;
+        wasLocked = true;
+      }
+      
+      await this.userRepository.save(user);
+      
+      this.logger.warn(
+        `Failed login attempt for ${publicKey}, attempts: ${user.failedLoginAttempts}`,
+      );
+
+      if (wasLocked) {
+        const unlockTime = user.lockedUntil!.toISOString();
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.LOCKED,
+            message: 'Account locked due to multiple failed login attempts.',
+            unlockTime,
+            remainingSeconds: LOCK_DURATION_MINUTES * 60,
+          },
+          HttpStatus.LOCKED,
+        );
+      }
+
       throw new UnauthorizedException('Invalid signature');
     }
 
-    // Find or create wallet
-    const wallet = await this.walletRepository.findOne({ where: { publicKey } });
-    
-    if (!wallet) {
-      throw new UnauthorizedException('Wallet not found');
-    }
+    // Successful login - reset failed attempts
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = null;
+    await this.userRepository.save(user);
+
+    this.logger.log(`Successful login for user: ${user.id}`);
 
     // Generate JWT token
     const payload = { publicKey: wallet.publicKey, sub: wallet.userId };
@@ -47,19 +128,12 @@ export class AuthService {
     message: string,
   ): Promise<boolean> {
     try {
-      // Create a Keypair from the public key
       const keypair = Keypair.fromPublicKey(publicKey);
-      
-      // Convert message to buffer
       const messageBuffer = Buffer.from(message, 'utf8');
-      
-      // Convert signature from base64 to buffer
       const signatureBuffer = Buffer.from(signature, 'base64');
-      
-      // Verify the signature
       return keypair.verify(messageBuffer, signatureBuffer);
-    } catch {
-      // Signature verification failed - return false without logging
+    } catch (error) {
+      this.logger.error(`Signature verification failed: ${error}`);
       return false;
     }
   }
