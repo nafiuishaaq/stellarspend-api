@@ -100,8 +100,8 @@ export class NotificationsController {
     if (!req.user?.id) {
       throw new Error('User not authenticated');
     }
-    await this.notificationsService.markAllAsRead(req.user.id);
-    return { message: 'All notifications marked as read' };
+    const count = await this.notificationsService.markAllAsRead(req.user.id);
+    return { count };
   }
 
   @Delete(':id')
