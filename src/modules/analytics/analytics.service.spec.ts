@@ -126,10 +126,10 @@ describe('AnalyticsService', () => {
 
       it('should handle no previous period data', async () => {
         // Arrange
-        const currentRows = [
+        const currentRows: any[] = [
           { category: 'groceries', total_amount: '1000', transaction_count: '5' },
         ];
-        const previousRows = [];
+        const previousRows: any[] = [];
 
         mockDataSource.query
           .mockResolvedValueOnce(currentRows)
