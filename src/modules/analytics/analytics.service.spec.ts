@@ -233,11 +233,11 @@ describe('AnalyticsService', () => {
     describe('weekly period', () => {
       it('should return spending summary for weekly period', async () => {
         // Arrange
-        const currentRows = [
+        const currentRows: any[] = [
           { category: 'groceries', total_amount: '500', transaction_count: '5' },
           { category: 'entertainment', total_amount: '300', transaction_count: '3' },
         ];
-        const previousRows = [{ total_amount: '600', transaction_count: '6' }];
+        const previousRows: any[] = [{ total_amount: '600', transaction_count: '6' }];
 
         mockDataSource.query
           .mockResolvedValueOnce(currentRows)
