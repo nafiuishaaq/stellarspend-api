@@ -17,9 +17,11 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { NotificationsService, CreateNotificationDto } from './notifications.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AccountStatusGuard } from '../../common/guards/account-status.guard';
+import { NOTIFICATIONS_THROTTLE } from '../../common/constants/throttle.constants';
 
 interface AuthenticatedRequest {
   user?: {
@@ -31,6 +33,7 @@ interface AuthenticatedRequest {
 @ApiBearerAuth()
 @Controller('notifications')
 @UseGuards(JwtAuthGuard, AccountStatusGuard)
+@Throttle(NOTIFICATIONS_THROTTLE)
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
@@ -97,8 +100,8 @@ export class NotificationsController {
     if (!req.user?.id) {
       throw new Error('User not authenticated');
     }
-    await this.notificationsService.markAllAsRead(req.user.id);
-    return { message: 'All notifications marked as read' };
+    const count = await this.notificationsService.markAllAsRead(req.user.id);
+    return { count };
   }
 
   @Delete(':id')

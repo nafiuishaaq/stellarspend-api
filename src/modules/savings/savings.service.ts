@@ -119,6 +119,31 @@ export class SavingsService {
   }
 
   /**
+   * Deletes a savings goal
+   * @param userId - User ID requesting the deletion
+   * @param goalId - Goal ID to delete
+   * @returns Promise resolving when the goal has been deleted
+   * @throws ValidationError if data is invalid
+   * @throws AuthorizationError if user doesn't own the goal
+   * @throws NotFoundError if goal doesn't exist
+   */
+  async deleteGoal(userId: string, goalId: string): Promise<void> {
+    this.validateUserId(userId);
+    this.validateId(goalId);
+
+    const goal = await this.repository.findOne(goalId);
+    if (!goal) {
+      throw new NotFoundError('Goal not found');
+    }
+
+    if (goal.userId !== userId) {
+      throw new AuthorizationError('You do not have permission to access this goal');
+    }
+
+    await this.repository.delete(goalId);
+  }
+
+  /**
    * Calculates progress percentage
    * @param currentAmount - Current saved amount
    * @param targetAmount - Target amount
@@ -265,5 +290,31 @@ export class SavingsService {
     if (decimalPlaces > 2) {
       throw new ValidationError('Contribution amount cannot have more than 2 decimal places');
     }
+  }
+  async calculateGoalProgress(id: string) {
+    const goal = await this.savingsGoalRepository.findOne({ where: { id } });
+
+    if (!goal) {
+      throw new NotFoundException(`Savings goal configuration with ID "${id}" could not be found.`);
+    }
+
+    // Avoid division-by-zero vulnerabilities if targetAmount defaults to 0
+    const target = goal.targetAmount || 1;
+    const current = goal.currentAmount || 0;
+
+    // Calculate precision ratio and clamp at 100% when goal parameters are exceeded
+    let percentage = Math.round((current / target) * 100);
+    if (percentage > 100) {
+      percentage = 100;
+    }
+
+    return {
+      id: goal.id,
+      name: goal.name,
+      targetAmount: target,
+      currentAmount: current,
+      percentage,
+      isCompleted: current >= target,
+    };
   }
 }

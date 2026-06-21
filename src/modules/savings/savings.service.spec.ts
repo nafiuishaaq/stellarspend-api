@@ -171,6 +171,55 @@ describe('SavingsService', () => {
     });
   });
 
+  describe('deleteGoal', () => {
+    it('should delete a goal owned by the user', async () => {
+      const userId = '123e4567-e89b-12d3-a456-426614174000';
+      const goal = createTestSavingsGoal({ userId });
+      repository.seed([goal]);
+
+      await service.deleteGoal(userId, goal.id);
+
+      const found = await repository.findOne(goal.id);
+      expect(found).toBeNull();
+    });
+
+    it('should reject deletion with invalid user ID', async () => {
+      const goal = createTestSavingsGoal({ userId: '123e4567-e89b-12d3-a456-426614174000' });
+      repository.seed([goal]);
+
+      await expect(service.deleteGoal('', goal.id)).rejects.toThrow(ValidationError);
+      await expect(service.deleteGoal('invalid-uuid', goal.id)).rejects.toThrow(ValidationError);
+    });
+
+    it('should reject deletion with invalid goal ID', async () => {
+      const userId = '123e4567-e89b-12d3-a456-426614174000';
+
+      await expect(service.deleteGoal(userId, '')).rejects.toThrow(ValidationError);
+      await expect(service.deleteGoal(userId, 'invalid-uuid')).rejects.toThrow(ValidationError);
+    });
+
+    it('should throw NotFoundError for non-existent goal', async () => {
+      const userId = '123e4567-e89b-12d3-a456-426614174000';
+      const goalId = '123e4567-e89b-12d3-a456-426614174999';
+
+      await expect(service.deleteGoal(userId, goalId)).rejects.toThrow(NotFoundError);
+    });
+
+    it('should throw AuthorizationError when deleting another user\'s goal', async () => {
+      const ownerId = '123e4567-e89b-12d3-a456-426614174000';
+      const otherUserId = '123e4567-e89b-12d3-a456-426614174001';
+      const goal = createTestSavingsGoal({ userId: ownerId });
+      repository.seed([goal]);
+
+      await expect(service.deleteGoal(otherUserId, goal.id)).rejects.toThrow(AuthorizationError);
+      await expect(service.deleteGoal(otherUserId, goal.id)).rejects.toThrow('You do not have permission to access this goal');
+
+      // Goal should remain untouched
+      const found = await repository.findOne(goal.id);
+      expect(found).not.toBeNull();
+    });
+  });
+
   describe('calculateProgress', () => {
     it('should calculate progress correctly', () => {
       expect(service.calculateProgress(0, 1000)).toBe(0);
@@ -216,5 +265,62 @@ describe('SavingsService', () => {
 
       await expect(service.validateGoalOwnership(userId, goalId)).rejects.toThrow(NotFoundError);
     });
+  });
+});
+
+describe('SavingsService - Goal Progress Metrics', () => {
+  let service: SavingsService;
+  let repositoryMock: any;
+
+  beforeEach(async () => {
+    repositoryMock = {
+      findOne: jest.fn(),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SavingsService,
+        {
+          provide: getRepositoryToken(SavingsGoal),
+          useValue: repositoryMock,
+        },
+      ],
+    }).compile();
+
+    service = module.get<SavingsService>(SavingsService);
+  });
+
+  it('should successfully compute progress configurations for valid items', async () => {
+    repositoryMock.findOne.mockResolvedValue({
+      id: 'mock-uuid-1',
+      name: 'Stellar Node Hardware Fund',
+      targetAmount: 5000,
+      currentAmount: 2500,
+    });
+
+    const result = await service.calculateGoalProgress('mock-uuid-1');
+    expect(result.percentage).toBe(50);
+    expect(result.isCompleted).toBe(false);
+  });
+
+  it('should explicitly clamp progress percentages at 100% when targets are surpassed', async () => {
+    repositoryMock.findOne.mockResolvedValue({
+      id: 'mock-uuid-2',
+      name: 'Soroban Security Audit Pool',
+      targetAmount: 1000,
+      currentAmount: 1200,
+    });
+
+    const result = await service.calculateGoalProgress('mock-uuid-2');
+    expect(result.percentage).toBe(100);
+    expect(result.isCompleted).toBe(true);
+  });
+
+  it('should throw a 404 NotFoundException for unrecognized target goal IDs', async () => {
+    repositoryMock.findOne.mockResolvedValue(null);
+
+    await expect(service.calculateGoalProgress('unknown-id')).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });
