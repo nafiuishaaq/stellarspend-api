@@ -50,7 +50,7 @@ describe('AuthService', () => {
 
     mockWalletRepo.findOne.mockResolvedValue(testWallet);
     mockUserRepo.findOne.mockResolvedValue(testUser);
-    mockUserRepo.update.mockResolvedValue(testUser as any);
+    mockUserRepo.update.mockResolvedValue(testUser);
 
     const result = await authService.login({
       publicKey: testWallet.publicKey,
@@ -90,19 +90,21 @@ describe('AuthService', () => {
       createdAt: new Date(),
     } as Wallet;
 
-    mockUserRepo.findOne.mockImplementation(async ({ where }) => {
-      if (where?.refreshToken === currentRefreshToken) {
+    mockUserRepo.findOne.mockImplementation(async (criteria: { where?: { refreshToken?: string } }) => {
+      if (criteria.where?.refreshToken === currentRefreshToken) {
         return testUser;
       }
       return null;
     });
 
     mockWalletRepo.findOne.mockResolvedValue(testWallet);
-    mockUserRepo.update.mockImplementation(async (_id, update) => {
-      currentRefreshToken = update.refreshToken as string;
-      testUser.refreshToken = update.refreshToken as string;
-      testUser.refreshTokenExpiry = update.refreshTokenExpiry as Date;
-      return testUser as any;
+    mockUserRepo.update.mockImplementation(async (_id: string, update: Partial<User>) => {
+      const refreshToken = update.refreshToken as string;
+      const refreshTokenExpiry = update.refreshTokenExpiry as Date;
+      currentRefreshToken = refreshToken;
+      testUser.refreshToken = refreshToken;
+      testUser.refreshTokenExpiry = refreshTokenExpiry;
+      return testUser;
     });
 
     const firstResult = await authService.refresh(currentRefreshToken);
