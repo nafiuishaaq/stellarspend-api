@@ -19,6 +19,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Transaction } from './transaction.entity';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { ExportTransactionsDto } from './dto/export-transactions.dto';
 import {
   ANALYTICS_RECALCULATION_QUEUE,
   JOB_RECALCULATE_ANALYTICS,
@@ -78,7 +79,7 @@ export class TransactionsService {
     @InjectRepository(Transaction)
     private readonly repository: Repository<Transaction>,
     @Optional()
-    @InjectQueue(ANALYTICS_RECALCULATION_QUEUE)
+    @InjectQueue(ANALYTUC_RECALCULATION_QUEUE)
     private readonly analyticsQueue?: Queue,
     @Optional()
     private readonly notificationsGateway?: NotificationsGateway,
@@ -206,6 +207,42 @@ export class TransactionsService {
   ): Promise<PaginatedTransactionsResult> {
     this.validateCategory(category);
     return this.findAllPaginated(page, limit, 'desc', { category });
+  }
+
+  /**
+   * Compiles filtered ledger history into a standardized download-ready CSV string.
+   * Fulfills acceptance requirements for Ticket #71.
+   */
+  async exportToCsv(filters: ExportTransactionsDto): Promise<string> {
+    const where: FindOptionsWhere<Transaction> = {};
+
+    if (filters.startDate || filters.endDate) {
+      const start = filters.startDate ? new Date(filters.startDate) : new Date('2020-01-01');
+      const end = filters.endDate ? new Date(filters.endDate) : new Date();
+      where.stellarCreatedAt = Between(start, end);
+    }
+
+    const transactions = await this.repository.find({
+      where,
+      order: { stellarCreatedAt: 'DESC' },
+    });
+
+    const headers = ['date', 'description', 'amount', 'type', 'status'];
+    const csvRows = [headers.join(',')];
+
+    for (const tx of transactions) {
+      const sanitizedDesc = tx.description ? `"${tx.description.replace(/"/g, '""')}"` : '""';
+      const row = [
+        tx.stellarCreatedAt instanceof Date ? tx.stellarCreatedAt.toISOString() : new Date(tx.stellarCreatedAt).toISOString(),
+        sanitizedDesc,
+        tx.amount,
+        tx.transactionType,
+        tx.status,
+      ];
+      csvRows.push(row.join(','));
+    }
+
+    return csvRows.join('\r\n');
   }
 
   /**

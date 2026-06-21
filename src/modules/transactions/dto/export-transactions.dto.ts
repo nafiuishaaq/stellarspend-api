@@ -6,14 +6,16 @@ export class ExportTransactionsDto {
     example: '2024-01-01',
     description: 'Start date for filtering transactions (ISO 8601 format)',
   })
-  @IsOptional()
-  @IsDateString()
-  startDate?: string;
 
   @ApiPropertyOptional({
     example: '2024-12-31',
     description: 'End date for filtering transactions (ISO 8601 format)',
   })
+
+   @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
   @IsOptional()
   @IsDateString()
   endDate?: string;

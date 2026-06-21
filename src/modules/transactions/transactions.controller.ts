@@ -11,7 +11,9 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -22,6 +24,7 @@ import {
 } from '@nestjs/swagger';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { QueryTransactionsDto } from './dto/query-transactions.dto';
+import { ExportTransactionsDto } from './dto/export-transactions.dto';
 import { TriggerSyncDto } from './dto/trigger-sync.dto';
 import { TransactionsService } from './transactions.service';
 
@@ -42,6 +45,23 @@ export class TransactionsController {
       success: true,
       data: transaction,
     };
+  }
+
+  @Get('export')
+  @ApiOperation({ summary: 'Export historical ledger transactions to a CSV file' })
+  @ApiQuery({ type: ExportTransactionsDto })
+  @ApiResponse({ status: 200, description: 'CSV record data generated successfully' })
+  async exportTransactions(
+    @Query() query: ExportTransactionsDto,
+    @Res() res: Response,
+  ) {
+    const csvContent = await this.transactionsService.exportToCsv(query);
+    const filename = `transaction-history-${new Date().toISOString().split('T')[0]}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    
+    return res.status(HttpStatus.OK).send(csvContent);
   }
 
   @Get()
