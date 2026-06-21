@@ -50,11 +50,12 @@ export class NotificationsService {
     return await this.notificationRepository.save(notification);
   }
 
-  async markAllAsRead(userId: string): Promise<void> {
-    await this.notificationRepository.update(
+  async markAllAsRead(userId: string): Promise<number> {
+    const updateResult = await this.notificationRepository.update(
       { userId, isRead: false },
       { isRead: true }
     );
+    return updateResult.affected || 0;
   }
 
   async delete(notificationId: string, userId: string): Promise<void> {
